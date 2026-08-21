@@ -47,6 +47,9 @@ async function kompresFoto(req, res, next) {
 
     const filePath = `${tahun}/${bulan}/${hari}/${namaFile}`;
 
+    console.log("FILE PATH SUPABASE:", filePath);
+    console.log("FILE SIZE:", bufferHasil.length);
+
     const storagePath = await uploadFotoAbsensi(
       bufferHasil,
       filePath,
