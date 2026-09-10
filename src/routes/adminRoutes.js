@@ -22,6 +22,7 @@ const {
   usulanHariLibur,
 } = require("../controllers/adminController");
 
+const { editLokasiAbsensi } = require("../controllers/editLokasiController");
 const { resetPasswordOlehAdmin } = require("../controllers/authController");
 
 const {
@@ -115,6 +116,25 @@ function validasiEditStatusAbsensi(req, res, next) {
 }
 
 // ============================================================
+// VALIDASI EDIT LOKASI ABSENSI
+// Admin hanya mengubah alamat yang tampil; koordinat GPS asli
+// disimpan tetap seperti data absensi semula.
+// ============================================================
+function validasiEditLokasiAbsensi(req, res, next) {
+  const alamatMasuk = String(req.body?.alamatMasuk || "").trim();
+
+  if (!alamatMasuk) {
+    return res.status(400).json({ pesan: "Alamat lokasi wajib diisi." });
+  }
+
+  if (alamatMasuk.length > 500) {
+    return res.status(400).json({ pesan: "Alamat lokasi maksimal 500 karakter." });
+  }
+
+  next();
+}
+
+// ============================================================
 // AKUN MENUNGGU KONFIRMASI
 // ============================================================
 router.get("/akun-menunggu", daftarMenungguKonfirmasi);
@@ -136,6 +156,11 @@ router.put(
   "/absensi/:id/edit-status",
   validasiEditStatusAbsensi,
   editStatusAbsensi,
+);
+router.put(
+  "/absensi/:id/edit-lokasi",
+  validasiEditLokasiAbsensi,
+  editLokasiAbsensi,
 );
 
 // ============================================================
