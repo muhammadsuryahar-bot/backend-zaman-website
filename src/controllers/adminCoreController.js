@@ -19,13 +19,6 @@ async function daftarMenungguKonfirmasi(req, res) {
   }
 }
 
-async function daftarKantorRingkas() {
-  return prisma.kantor.findMany({
-    select: { id: true, namaKantor: true, alamat: true },
-    orderBy: { namaKantor: "asc" },
-  });
-}
-
 async function aktifkanAkun(req, res) {
   try {
     const id = Number.parseInt(req.params.id, 10);
@@ -87,8 +80,6 @@ async function queryRekap(tanggal) {
         jamPulang: true,
         fotoMasuk: true,
         fotoPulang: true,
-        fotoMasukUrl: true,
-        fotoPulangUrl: true,
         latitudeMasuk: true,
         longitudeMasuk: true,
         latitudePulang: true,
@@ -158,7 +149,6 @@ module.exports = {
   daftarMenungguKonfirmasi,
   aktifkanAkun,
   daftarKaryawan,
-  daftarKantorRingkas,
   rekapHariIni,
   rekapTanggal,
 };
