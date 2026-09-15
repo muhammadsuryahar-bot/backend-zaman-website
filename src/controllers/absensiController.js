@@ -1,5 +1,6 @@
 const prisma = require("../utils/prismaClient");
 const { tanggalHariIniWIB, jamSekarangWIB } = require("../utils/waktuIndonesia");
+const { reverseGeocode } = require("../utils/reverseGeocode");
 
 function jamKeDesimal(jamString) {
   const [jam, menit] = jamString.split(":").map(Number);
@@ -16,29 +17,42 @@ function tanggalHariIni() {
   return tanggalHariIniWIB();
 }
 
-// Kalau ada "waktuAsli" dari klien (dikirim saat karyawan menekan tombol,
-// dipakai terutama buat absen yang sempat nyangkut di antrian offline dan
-// baru berhasil terkirim belakangan), pakai jam ITU sebagai jam absen --
-// BUKAN jam server terima request. Tanpa ini, karyawan yang sudah benar
-// absen tepat waktu tapi sinyalnya jelek bisa salah tercatat "Telat" cuma
-// karena requestnya baru sampai ke server belakangan.
-//
-// Tapi tetap dibatasi wajar (maksimal mundur 12 jam dari sekarang, dan
-// tidak boleh di masa depan) -- supaya field ini tidak disalahgunakan buat
-// selalu ngaku "tepat waktu" dengan kirim jam sembarangan yang jauh di masa
-// lalu. 12 jam cukup longgar buat kasus sinyal jelek di lapangan yang wajar,
-// tapi tetap membatasi potensi kecurangan.
 function tentukanJamAbsen(waktuAsliDariKlien) {
   const sekarang = new Date();
   if (!waktuAsliDariKlien) return sekarang;
 
   const waktuKlien = new Date(waktuAsliDariKlien);
-  if (isNaN(waktuKlien.getTime())) return sekarang; // format tidak valid, abaikan
+  if (isNaN(waktuKlien.getTime())) return sekarang;
 
   const batasMundur = new Date(sekarang.getTime() - 12 * 60 * 60 * 1000);
-  if (waktuKlien > sekarang || waktuKlien < batasMundur) return sekarang; // di luar rentang wajar, abaikan
+  if (waktuKlien > sekarang || waktuKlien < batasMundur) return sekarang;
 
   return waktuKlien;
+}
+
+function alamatBerupaKoordinat(alamat) {
+  const teks = String(alamat || "").trim();
+  if (!teks) return true;
+  return /^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?(?:\s*\(akurasi\s*±?\d+m\))?$/i.test(teks);
+}
+
+async function tentukanAlamat(latitude, longitude, alamatDariKlien) {
+  const alamat = String(alamatDariKlien || "").trim();
+  if (!alamatBerupaKoordinat(alamat)) return alamat;
+
+  try {
+    const hasil = await reverseGeocode(latitude, longitude);
+    if (hasil) return hasil;
+  } catch (error) {
+    console.warn("Reverse geocoding server gagal:", error?.message || error);
+  }
+
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return `${lat}, ${lon}`;
+  }
+  return null;
 }
 
 async function absenMasuk(req, res) {
@@ -62,13 +76,14 @@ async function absenMasuk(req, res) {
     const jamSekarang = jamSekarangWIB(sekarang);
     const statusOtomatis = jamSekarang <= jamBatasMasuk ? "tepat_waktu" : "telat";
     const fotoPath = req.file.filename;
+    const alamatFinal = await tentukanAlamat(latitude, longitude, alamat);
 
     const data = {
       jamMasuk: sekarang,
       fotoMasuk: fotoPath,
       latitudeMasuk: latitude ? parseFloat(latitude) : null,
       longitudeMasuk: longitude ? parseFloat(longitude) : null,
-      alamatMasuk: alamat || null,
+      alamatMasuk: alamatFinal,
       statusOtomatis,
       statusFinal: statusOtomatis,
     };
@@ -105,6 +120,8 @@ async function absenPulang(req, res) {
       return res.status(400).json({ pesan: "Anda sudah melakukan absen pulang hari ini." });
     }
 
+    const alamatFinal = await tentukanAlamat(latitude, longitude, alamat);
+
     const absensi = await prisma.absensi.update({
       where: { id: absensiHariIni.id },
       data: {
@@ -112,7 +129,7 @@ async function absenPulang(req, res) {
         fotoPulang: req.file.filename,
         latitudePulang: latitude ? parseFloat(latitude) : null,
         longitudePulang: longitude ? parseFloat(longitude) : null,
-        alamatPulang: alamat || null,
+        alamatPulang: alamatFinal,
       },
     });
 
@@ -133,7 +150,7 @@ async function riwayatSaya(req, res) {
     return res.json({ data: riwayat });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ pesan: "Terjadi kesalahan pada server.", detail: error.message });
+    return res.status(500).json({ pesan: "Terjadi kesalahan pada server." });
   }
 }
 
@@ -150,7 +167,7 @@ async function statusHariIni(req, res) {
     return res.json({ tahap, data: absensi || null });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ pesan: "Terjadi kesalahan pada server.", detail: error.message });
+    return res.status(500).json({ pesan: "Terjadi kesalahan pada server." });
   }
 }
 
